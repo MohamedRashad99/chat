@@ -592,13 +592,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           decoration: const BoxDecoration(
             color: AppTheme.background,
+
             image: DecorationImage(
               image: NetworkImage(
                   'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSbUYCNe7GstXUBFFOEsxF09-1sOL0uVquMRA&s'), // fallback
               fit: BoxFit.cover,
               opacity: 0.03,
+              // in a real app, you'd want to host your own subtle chat background pattern and use that instead
             ),
           ),
+          // loading, empty, or messages
           child: _loadingMessages
               ? const Center(
                   child: CircularProgressIndicator(
