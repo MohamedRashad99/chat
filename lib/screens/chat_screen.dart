@@ -608,6 +608,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       strokeWidth: 2, color: AppTheme.accent))
               : _messages.isEmpty
                   ? Center(
+
+            // subtle "no messages" hint
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
