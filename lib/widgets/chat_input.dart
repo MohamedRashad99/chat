@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'dart:io';
+import '../main.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 
@@ -35,8 +37,8 @@ class _ChatInputState extends State<ChatInput> {
   bool _showSuggestions = false;
   bool _showEmojiPicker = false;
   bool _isRecording = false;
+  bool _hasText = false;
   DateTime? _recordStartedAt;
-  String _mentionQuery = '';
 
   @override
   void dispose() {
@@ -47,6 +49,10 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   void _onChanged(String val) {
+    final hasText = val.trim().isNotEmpty;
+    if (_hasText != hasText) {
+      setState(() => _hasText = hasText);
+    }
     // detect @mention trigger
     final cursor = _ctrl.selection.baseOffset;
     if (cursor <= 0) {
@@ -65,8 +71,6 @@ class _ChatInputState extends State<ChatInput> {
       _hideSuggestions();
       return;
     }
-
-    _mentionQuery = query;
 
     // build suggestions: @all first, then members
     final filtered = <RoomMember>[];
@@ -143,6 +147,7 @@ class _ChatInputState extends State<ChatInput> {
         widget.replyTo?.id,
       );
       _ctrl.clear();
+      _hasText = false;
       _hideSuggestions();
       if (mounted) setState(() => _showEmojiPicker = false);
     } catch (e, st) {
@@ -156,16 +161,74 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   Future<void> _pickImageAndSend() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    await widget.onSend('[image] ${image.name}', const [], false, widget.replyTo?.id);
+    try {
+      final image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      final ext = image.path.contains('.') ? image.path.split('.').last : 'jpg';
+      final key =
+          'chat/${DateTime.now().millisecondsSinceEpoch}_${image.name}.$ext';
+      await supabase.storage.from('chat-media').uploadBinary(key, bytes);
+      final url = supabase.storage.from('chat-media').getPublicUrl(key);
+      await widget.onSend(
+        '[image]|${image.name}|$url',
+        const [],
+        false,
+        widget.replyTo?.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Image send failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickFromCameraAndSend() async {
+    try {
+      final image = await _picker.pickImage(source: ImageSource.camera);
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      final ext = image.path.contains('.') ? image.path.split('.').last : 'jpg';
+      final key =
+          'chat/${DateTime.now().millisecondsSinceEpoch}_${image.name}.$ext';
+      await supabase.storage.from('chat-media').uploadBinary(key, bytes);
+      final url = supabase.storage.from('chat-media').getPublicUrl(key);
+      await widget.onSend(
+        '[image]|${image.name}|$url',
+        const [],
+        false,
+        widget.replyTo?.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera send failed: $e')),
+      );
+    }
   }
 
   Future<void> _pickFileAndSend() async {
-    final res = await FilePicker.platform.pickFiles();
-    if (res == null || res.files.isEmpty) return;
-    final file = res.files.first;
-    await widget.onSend('[file] ${file.name}', const [], false, widget.replyTo?.id);
+    try {
+      final res = await FilePicker.platform.pickFiles(withData: true);
+      if (res == null || res.files.isEmpty) return;
+      final file = res.files.first;
+      final data = file.bytes ?? await File(file.path!).readAsBytes();
+      final key = 'chat/${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      await supabase.storage.from('chat-media').uploadBinary(key, data);
+      final url = supabase.storage.from('chat-media').getPublicUrl(key);
+      await widget.onSend(
+        '[file]|${file.name}|$url',
+        const [],
+        false,
+        widget.replyTo?.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('File send failed: $e')),
+      );
+    }
   }
 
   Future<void> _toggleRecordVoice() async {
@@ -379,6 +442,14 @@ class _ChatInputState extends State<ChatInput> {
                   icon: const Icon(Icons.camera_alt_outlined,
                       color: AppTheme.textMuted, size: 22),
                   splashRadius: 18,
+                  tooltip: 'Gallery',
+                ),
+                IconButton(
+                  onPressed: _pickFromCameraAndSend,
+                  icon: const Icon(Icons.photo_camera_outlined,
+                      color: AppTheme.textMuted, size: 22),
+                  splashRadius: 18,
+                  tooltip: 'Camera',
                 ),
                 const SizedBox(width: 10),
               ]),
@@ -387,7 +458,7 @@ class _ChatInputState extends State<ChatInput> {
           const SizedBox(width: 8),
           // send button
           GestureDetector(
-            onTap: _ctrl.text.trim().isEmpty ? _toggleRecordVoice : _send,
+            onTap: _hasText ? _send : _toggleRecordVoice,
             child: Container(
               width: 46, height: 46,
               decoration: const BoxDecoration(
@@ -395,9 +466,7 @@ class _ChatInputState extends State<ChatInput> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                _ctrl.text.trim().isEmpty
-                    ? (_isRecording ? Icons.stop : Icons.mic)
-                    : Icons.send,
+                _hasText ? Icons.send : (_isRecording ? Icons.stop : Icons.mic),
                 color: Colors.white,
                 size: 20,
               ),

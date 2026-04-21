@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'mention_text.dart';
@@ -138,32 +139,79 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildContent() {
-    if (message.content.startsWith('[image] ')) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.image_outlined, size: 16, color: AppTheme.accent),
-          SizedBox(width: 6),
-          Text(
-            'Image uploaded',
-            style: TextStyle(color: AppTheme.bubbleOtherText, fontSize: 14),
-          ),
+    if (message.content.startsWith('[image]|')) {
+      final parts = message.content.split('|');
+      final name = parts.length > 1 ? parts[1] : 'image';
+      final url = parts.length > 2 ? parts[2] : '';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (url.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                url,
+                height: 180,
+                width: 220,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  width: 220,
+                  color: Colors.black26,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image, color: AppTheme.textMuted),
+                ),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Text(name, style: const TextStyle(color: AppTheme.bubbleOtherText)),
         ],
       );
     }
-    if (message.content.startsWith('[file] ')) {
-      final name = message.content.replaceFirst('[file] ', '');
+    if (message.content.startsWith('[file]|')) {
+      final parts = message.content.split('|');
+      final name = parts.length > 1 ? parts[1] : 'file';
+      final url = parts.length > 2 ? parts[2] : '';
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.attach_file, size: 16, color: AppTheme.accent),
           const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppTheme.bubbleOtherText, fontSize: 14),
+          Expanded(
+            child: InkWell(
+              onTap: () async {
+                if (url.isEmpty) return;
+                await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              },
+              child: Text(
+                name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppTheme.textLink,
+                  fontSize: 14,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
             ),
+          ),
+        ],
+      );
+    }
+    if (message.content.startsWith('[call]|')) {
+      final parts = message.content.split('|');
+      final kind = parts.length > 1 ? parts[1] : 'voice';
+      final caller = parts.length > 3 ? parts[3] : 'Member';
+      return Row(
+        children: [
+          Icon(
+            kind == 'video' ? Icons.videocam_outlined : Icons.call_outlined,
+            size: 16,
+            color: AppTheme.accent,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$caller started a $kind call',
+            style: const TextStyle(color: AppTheme.bubbleOtherText, fontSize: 14),
           ),
         ],
       );

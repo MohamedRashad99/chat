@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
@@ -8,6 +9,7 @@ import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/room_tile.dart';
 import '../widgets/user_avatar.dart';
+import 'auth_screen.dart';
 import 'group_info_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -36,6 +38,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<String, DateTime> _lastMsgAt = {};
 
   RealtimeChannel? _msgChannel;
+  DateTime? _lastMentionAlertAt;
 
   final _scrollCtrl = ScrollController();
 
@@ -185,6 +188,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         callback: (payload) async {
           final row = Map<String, dynamic>.from(payload.newRecord);
+          final currentUid = supabase.auth.currentUser?.id ?? '';
+          final myUsername = _myProfile?.username ?? '';
           try {
             final p = await supabase
                 .from('profiles')
@@ -195,11 +200,70 @@ class _ChatScreenState extends State<ChatScreen> {
           } catch (_) {}
           if (!mounted) return;
           final msg = Message.fromJson(row);
+          final isMyMessage = msg.userId == currentUid;
+          final mentionedMe =
+              !isMyMessage && msg.isMentioned(currentUid, myUsername);
+          final callIncomingForMe = !isMyMessage &&
+              msg.content.startsWith('[call]|') &&
+              msg.content.split('|').length > 2 &&
+              msg.content.split('|')[2] == currentUid;
+
           setState(() {
             _messages.add(msg);
             _lastMsg[room.id] = msg.content;
             _lastMsgAt[room.id] = msg.createdAt;
           });
+          if (mentionedMe) {
+            final now = DateTime.now();
+            if (_lastMentionAlertAt == null ||
+                now.difference(_lastMentionAlertAt!) >
+                    const Duration(seconds: 2)) {
+              _lastMentionAlertAt = now;
+              SystemSound.play(SystemSoundType.alert);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Walkie alert: ${msg.username ?? 'Member'} mentioned you',
+                  ),
+                ),
+              );
+            }
+          }
+          if (callIncomingForMe) {
+            final parts = msg.content.split('|');
+            final kind = parts.length > 1 ? parts[1] : 'voice';
+            final caller = parts.length > 3 ? parts[3] : 'Member';
+            SystemSound.play(SystemSoundType.alert);
+            showDialog<void>(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: AppTheme.surface,
+                title: Text(
+                  '$caller is calling',
+                  style: const TextStyle(color: AppTheme.textPrimary),
+                ),
+                content: Text(
+                  'Incoming ${kind == 'video' ? 'video' : 'voice'} call',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Decline'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Connected to $caller')),
+                      );
+                    },
+                    child: const Text('Accept'),
+                  ),
+                ],
+              ),
+            );
+          }
           _scrollToBottom();
         },
       )
@@ -295,6 +359,84 @@ class _ChatScreenState extends State<ChatScreen> {
           .update({'is_deleted': true, 'content': ''})
           .eq('id', msg.id);
     } catch (_) {}
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await supabase.auth.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sign out failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _startMemberCall({required bool isVideo}) async {
+    if (_members.isEmpty) return;
+    final me = supabase.auth.currentUser?.id;
+    final candidates = _members.where((m) => m.userId != me).toList();
+    if (candidates.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other members to call')),
+      );
+      return;
+    }
+
+    final target = await showModalBottomSheet<RoomMember>(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: candidates.length,
+          itemBuilder: (_, i) {
+            final member = candidates[i];
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppTheme.accent.withOpacity(0.15),
+                child: Text(
+                  member.username.isEmpty ? '?' : member.username[0].toUpperCase(),
+                  style: const TextStyle(color: AppTheme.accent),
+                ),
+              ),
+              title: Text(
+                member.username,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
+              onTap: () => Navigator.pop(context, member),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (target == null) return;
+    await _sendMessage(
+      '[call]|${isVideo ? 'video' : 'voice'}|${target.userId}|${_myProfile?.username ?? 'Member'}',
+      [target.userId],
+      false,
+      null,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isVideo
+              ? 'Video call started with ${target.username}'
+              : 'Voice call started with ${target.username}',
+        ),
+      ),
+    );
   }
 
   Future<void> _createGroup() async {
@@ -416,7 +558,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   color: AppTheme.textSecondary),
               color: AppTheme.surface,
               onSelected: (val) {
-                if (val == 'signout') supabase.auth.signOut();
+                if (val == 'signout') _signOut();
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(
@@ -577,8 +719,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.search, color: AppTheme.textSecondary),
-            onPressed: () {},
+            icon: const Icon(Icons.call_outlined, color: AppTheme.textSecondary),
+            tooltip: 'Voice call member',
+            onPressed: () => _startMemberCall(isVideo: false),
+          ),
+          IconButton(
+            icon: const Icon(Icons.videocam_outlined, color: AppTheme.textSecondary),
+            tooltip: 'Video call member',
+            onPressed: () => _startMemberCall(isVideo: true),
           ),
           IconButton(
             icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
