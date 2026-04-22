@@ -3,6 +3,7 @@ class Message {
   final String roomId;
   final String userId;
   final String content;
+  final String? imageUrl;   // ← NEW: real uploaded image
   final DateTime createdAt;
   final String? username;
   final String? avatarUrl;
@@ -10,14 +11,15 @@ class Message {
   final String? replyToContent;
   final String? replyToUsername;
   final bool isDeleted;
-  final List<String> mentions; // user ids mentioned
-  final bool mentionsAll;      // @all mention
+  final List<String> mentions;
+  final bool mentionsAll;
 
   Message({
     required this.id,
     required this.roomId,
     required this.userId,
     required this.content,
+    this.imageUrl,
     required this.createdAt,
     this.username,
     this.avatarUrl,
@@ -30,7 +32,6 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
-    final content = json['content'] as String? ?? '';
     final mentionsList = (json['mentions'] as List?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -39,7 +40,8 @@ class Message {
       id: json['id'] as String,
       roomId: json['room_id'] as String,
       userId: json['user_id'] as String,
-      content: content,
+      content: json['content'] as String? ?? '',
+      imageUrl: json['image_url'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       username: json['profiles']?['username'] as String?,
       avatarUrl: json['profiles']?['avatar_url'] as String?,
