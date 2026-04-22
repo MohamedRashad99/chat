@@ -26,15 +26,15 @@ class DispatchNotificationService {
   final Queue<_MentionRequest> _queue = Queue();
   bool _isPlaying = false;
 
-  // URLs are currently empty to prevent browser format/CORS errors causing slow startup.
-  // Add your local assets later like: AssetSource('static.mp3')
-  final String _staticSoundUrl = '';
-  final String _beepSoundUrl = '';
-  final String _clickOutUrl = '';
+  // Using Local AssetSource to completely bypass all Web Browser Network/Format Errors!
+  final AssetSource _staticSound = AssetSource('sounds/static.mp3');
+  final AssetSource _beepSound = AssetSource('sounds/beep.mp3');
+  final AssetSource _clickOut = AssetSource('sounds/click.mp3');
 
   // Arabic pronunciation mapping
   String _getSpokenName(String username) {
     final lower = username.toLowerCase();
+    if (lower.contains('omaromar201145')) return 'عمر';
     if (lower.contains('onyx')) return 'رشاد';
     if (lower.contains('mo.nader')) return 'نادر';
     return username.replaceAll('.', ' ').replaceAll('_', ' ');
@@ -92,20 +92,16 @@ class DispatchNotificationService {
   Future<void> _executeDispatchSequence(String myName, String senderName) async {
     try {
       // 1. Play Pre-communication crackle (Radio Static)
-      if (_staticSoundUrl.isNotEmpty) {
-        try {
-          await _sfxPlayer.play(UrlSource(_staticSoundUrl));
-          await Future.delayed(const Duration(milliseconds: 400));
-        } catch (_) {}
-      }
+      try {
+        await _sfxPlayer.play(_staticSound);
+        await Future.delayed(const Duration(milliseconds: 400));
+      } catch (_) {}
       
       // 2. Double Alert Beep tone
-      if (_beepSoundUrl.isNotEmpty) {
-        try {
-          await _sfxPlayer.play(UrlSource(_beepSoundUrl));
-          await Future.delayed(const Duration(milliseconds: 600));
-        } catch (_) {}
-      }
+      try {
+        await _sfxPlayer.play(_beepSound);
+        await Future.delayed(const Duration(milliseconds: 600));
+      } catch (_) {}
 
       // Convert usernames to spoken Arabic names
       final spokenMyName = _getSpokenName(myName);
@@ -120,12 +116,10 @@ class DispatchNotificationService {
       await _ttsCompleter?.future;
 
       // 4. End transmission click (optional push-to-talk release)
-      if (_clickOutUrl.isNotEmpty) {
-        try {
-          await _sfxPlayer.play(UrlSource(_clickOutUrl));
-          await Future.delayed(const Duration(milliseconds: 300));
-        } catch (_) {}
-      }
+      try {
+        await _sfxPlayer.play(_clickOut);
+        await Future.delayed(const Duration(milliseconds: 300));
+      } catch (_) {}
       
     } catch (e) {
       debugPrint("🔊 Dispatch Service TTS Error: $e");
