@@ -42,7 +42,11 @@ dependencies:
   emoji_picker_flutter: ^4.3.0
   record: ^6.1.2
   path_provider: ^2.1.5
-  shared_preferences: ^2.3.2   # ← NEW: theme persistence
+  shared_preferences: ^2.3.2
+  livekit_client: ^2.7.0
+  flutter_tts: ^3.8.3
+  audioplayers: ^6.0.0
+  permission_handler: ^11.0.0
 
 
 dev_dependencies:

@@ -10,7 +10,7 @@ import '../widgets/room_tile.dart';
 import '../widgets/user_avatar.dart';
 import 'group_info_screen.dart';
 import 'call_screen.dart';
-
+import '../services/dispatch_notification_service.dart';
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -41,6 +41,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadMyProfile();
     _loadRooms();
+    DispatchNotificationService().initialize(); // Init new service
   }
 
   @override
@@ -185,6 +186,16 @@ class _ChatScreenState extends State<ChatScreen> {
             _lastMsgAt[room.id] = msg.createdAt;
           });
           _scrollToBottom();
+
+          // Mention check (walkie-talkie sound)
+          final uid = supabase.auth.currentUser?.id ?? '';
+          final myName = _myProfile?.username ?? '';
+          if (msg.isMentioned(uid, myName)) {
+            DispatchNotificationService().playSecurityDispatchAlert(
+              myName: myName,
+              senderName: msg.username.toString(),
+            );
+          }
         },
       )
       ..onPostgresChanges(
